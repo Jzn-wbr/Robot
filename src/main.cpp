@@ -1,23 +1,35 @@
 #include <Arduino.h>
+#include <Wire.h>
+
+constexpr unsigned long BAUDRATE = 115200;
+
+// PWM
+constexpr uint8_t CHANNEL_0 = 0;
+constexpr uint8_t CHANNEL_1 = 1;
+constexpr uint32_t PWM_FREQUENCY = 20000;
+constexpr uint8_t PWM_RESOLUTION_BITS = 8;
 
 // ESP32 pins
-// Driver
-constexpr int STBY = 26;
-constexpr int PWMA = 25;
-constexpr int AIN1 = 33;
-constexpr int AIN2 = 32;
-constexpr int PWMB = 27;
-constexpr int BIN1 = 16;
-constexpr int BIN2 = 17;
+namespace PIN
+{
+  // Driver
+  constexpr uint8_t STBY = 26;
+  constexpr uint8_t PWMA = 25;
+  constexpr uint8_t AIN1 = 33;
+  constexpr uint8_t AIN2 = 32;
+  constexpr uint8_t PWMB = 27;
+  constexpr uint8_t BIN1 = 16;
+  constexpr uint8_t BIN2 = 17;
 
-// HC-SR04
-constexpr int TRIG = 23;
-constexpr int ECHO = 34;
+  // HC-SR04
+  constexpr uint8_t TRIG = 23;
+  constexpr uint8_t ECHO = 34;
 
-// MPU 6050
-constexpr int SDA = 21;
-constexpr int SCL = 22;
-constexpr int MPU_INT = 35;
+  // MPU 6050
+  constexpr uint8_t SDA = 21;
+  constexpr uint8_t SCL = 22;
+  constexpr uint8_t MPU_INT = 35;
+}
 
 enum class Robot_state
 {
@@ -172,17 +184,46 @@ Scheduler scheduler{robot};
 Controller controller{robot};
 
 // ISR
-void IRAM_ATTR echo_rise();
-
-void IRAM_ATTR echo_fall();
+void IRAM_ATTR echo_change();
 
 void gpio_init()
 {
+  pinMode(PIN::STBY, OUTPUT);
+  pinMode(PIN::AIN1, OUTPUT);
+  pinMode(PIN::AIN2, OUTPUT);
+  pinMode(PIN::BIN1, OUTPUT);
+  pinMode(PIN::BIN2, OUTPUT);
+  pinMode(PIN::TRIG, OUTPUT);
+  pinMode(PIN::ECHO, INPUT);
+
+  // Safe state
+  digitalWrite(PIN::STBY, LOW);
+  digitalWrite(PIN::AIN1, LOW);
+  digitalWrite(PIN::AIN2, LOW);
+  digitalWrite(PIN::BIN1, LOW);
+  digitalWrite(PIN::BIN2, LOW);
+  digitalWrite(PIN::TRIG, LOW);
+
+  // PWM
+  ledcSetup(CHANNEL_0, PWM_FREQUENCY, PWM_RESOLUTION_BITS);
+  ledcAttachPin(PIN::PWMA, CHANNEL_0);
+  ledcWrite(CHANNEL_0, 0);
+  ledcSetup(CHANNEL_1, PWM_FREQUENCY, PWM_RESOLUTION_BITS);
+  ledcAttachPin(PIN::PWMB, CHANNEL_1);
+  ledcWrite(CHANNEL_1, 0);
+
+  // ISR
+  attachInterrupt(digitalPinToInterrupt(PIN::ECHO), echo_change, CHANGE);
 }
 
 // Run once
 void setup()
 {
+  Serial.begin(BAUDRATE);
+  delay(100);
+
+  gpio_init();
+  Wire.begin(PIN::SDA, PIN::SCL);
 }
 
 // Run continously
