@@ -95,7 +95,7 @@ public:
 
   void request_scan();
 
-  void calculate_distance(); // TODO: ignore absurd data with "invalid/timeout"
+  void calculate_distance(); // TODO: ignore absurd data and noise
 
   float get_distance_cm() const;
 
