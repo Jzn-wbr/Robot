@@ -8,16 +8,19 @@ constexpr uint8_t CHANNEL_0 = 0;
 constexpr uint8_t CHANNEL_1 = 1;
 constexpr uint32_t PWM_FREQUENCY = 20000;
 constexpr uint8_t PWM_RESOLUTION_BITS = 8;
+constexpr uint8_t PWM_MAX = 255;
 
 // ESP32 pins
 namespace PIN
 {
   // Driver
   constexpr uint8_t STBY = 26;
-  constexpr uint8_t PWMA = 25;
+
+  constexpr uint8_t PWMA = 25; // Left motor
   constexpr uint8_t AIN1 = 33;
   constexpr uint8_t AIN2 = 32;
-  constexpr uint8_t PWMB = 27;
+
+  constexpr uint8_t PWMB = 27; // Right motor
   constexpr uint8_t BIN1 = 16;
   constexpr uint8_t BIN2 = 17;
 
@@ -56,15 +59,60 @@ class Motor
 {
   Motor_mode mode;
   uint8_t pwm;
+  const uint8_t channel;
+  const uint8_t IN1, IN2, STBY;
 
 public:
-  Motor() : mode{Motor_mode::FREEWHEEL}, pwm{0} {}
+  Motor(uint8_t channel, uint8_t IN1, uint8_t IN2, uint8_t STBY) : mode{Motor_mode::FREEWHEEL},
+                                                                   pwm{0}, channel{channel},
+                                                                   IN1{IN1}, IN2{IN2},
+                                                                   STBY{STBY} {}
 
-  void set_pwm(uint8_t pwm);
-  void set_mode(Motor_mode mode);
+  void set_pwm(uint8_t pwm)
+  {
+    this->pwm = pwm;
+    ledcWrite(channel, pwm);
+  }
 
-  uint8_t get_pwm() const;
-  Motor_mode get_mode() const;
+  void set_mode(Motor_mode new_mode)
+  {
+    if (mode == new_mode)
+      return;
+
+    mode = new_mode;
+
+    switch (mode)
+    {
+    case Motor_mode::FREEWHEEL:
+      digitalWrite(STBY, LOW);
+      break;
+
+    case Motor_mode::FORWARD:
+      ledcWrite(channel, 0);
+      digitalWrite(STBY, HIGH);
+      digitalWrite(IN1, HIGH);
+      digitalWrite(IN2, LOW);
+      ledcWrite(channel, pwm);
+      break;
+
+    case Motor_mode::BACKWARD:
+      ledcWrite(channel, 0);
+      digitalWrite(STBY, HIGH);
+      digitalWrite(IN1, LOW);
+      digitalWrite(IN2, HIGH);
+      ledcWrite(channel, pwm);
+      break;
+
+    case Motor_mode::BRAKE:
+      digitalWrite(STBY, HIGH);
+      digitalWrite(IN1, LOW);
+      digitalWrite(IN2, LOW);
+      break;
+    }
+  }
+
+  uint8_t get_pwm() const { return pwm; }
+  Motor_mode get_mode() const { return mode; }
 };
 
 struct Mpu_data
@@ -92,6 +140,7 @@ public:
 // TRIG: ESP32 sends a 10 µs pulse to start an ultrasonic burst.
 // ECHO: sensor outputs a HIGH pulse whose duration equals the echo
 //       return time.
+// TODO: ignore absurd data and noise
 class HCSR04
 {
   volatile uint32_t echo_time_rise_us;
@@ -105,18 +154,25 @@ public:
   HCSR04() : echo_time_rise_us{0}, echo_total_duration_us{0}, distance_cm{0.f},
              new_measure_ready{false} {}
 
-  void request_scan();
+  void request_scan()
+  {
+    digitalWrite(PIN::TRIG, LOW);
+    delayMicroseconds(3);
+    digitalWrite(PIN::TRIG, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(PIN::TRIG, LOW);
+  }
 
-  void calculate_distance(); // TODO: ignore absurd data and noise
+  void calculate_distance() { distance_cm = 0.0343 * echo_total_duration_us / 2.f; }
 
-  float get_distance_cm() const;
+  float get_distance_cm() const { return distance_cm; }
 
-  void set_echo_time_rise_us(uint32_t time);
-  uint32_t get_echo_time_rise_us() const;
-  void set_echo_total_duration_us(uint32_t time);
+  void set_echo_time_rise_us(uint32_t time) { echo_time_rise_us = time; }
+  uint32_t get_echo_time_rise_us() const { return echo_time_rise_us; }
+  void set_echo_total_duration_us(uint32_t time) { echo_total_duration_us = time; }
 
-  void set_new_measure_flag();
-  bool get_new_measure_flag() const;
+  void set_new_measure_flag(bool flag) { new_measure_ready = flag; }
+  bool get_new_measure_flag() const { return new_measure_ready; }
 };
 
 class Robot
@@ -127,6 +183,9 @@ class Robot
   HCSR04 radar;
 
 public:
+  Robot() : left_motor{CHANNEL_0, PIN::AIN1, PIN::AIN2, PIN::STBY},
+            right_motor{CHANNEL_1, PIN::BIN1, PIN::BIN2, PIN::STBY} {}
+
   void free_wheel();
   void move_forward();
   void move_backward();
@@ -184,7 +243,20 @@ Scheduler scheduler{robot};
 Controller controller{robot};
 
 // ISR
-void IRAM_ATTR echo_change();
+void IRAM_ATTR echo_change()
+{
+  uint32_t now = micros();
+  int v = digitalRead(PIN::ECHO);
+
+  if (v)
+  {
+    robot.on_echo_rise(now);
+  }
+  else
+  {
+    robot.on_echo_fall(now);
+  }
+}
 
 void gpio_init()
 {
