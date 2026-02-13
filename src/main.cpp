@@ -345,7 +345,9 @@ public:
   Controller(Robot &robot) : robot{robot}, state{Robot_state::FREE_WHEEL},
                              entered_current_state_at_ms{0} {}
 
-  void think_and_update_robot_state_if_needed(uint32_t now_ms);
+  Robot_state think_and_establish_state(uint32_t now_ms);
+
+  Robot_state get_current_state() const { return state; }
 };
 
 // Instances
@@ -417,4 +419,11 @@ void setup()
 // Run continously
 void loop()
 {
+  uint32_t now_ms = millis();
+  scheduler.update(now_ms);
+
+  Robot_state next_state = controller.think_and_establish_state(now_ms);
+
+  if (next_state != controller.get_current_state())
+    robot.apply_state(next_state);
 }
