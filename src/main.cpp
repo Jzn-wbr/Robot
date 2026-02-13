@@ -119,6 +119,7 @@ struct Mpu_data
 {
   int16_t ax, ay, az; // Acceleration
   int16_t gx, gy, gz; // Angular velocity
+  int16_t temperature;
 };
 
 // IMU sensor (accelerometer + gyroscope) communicating over the I2C bus.
@@ -131,9 +132,45 @@ class MPU6050
 public:
   MPU6050() : last_data{} {}
 
-  void read();
+  void read()
+  {
+    // I2C communication
+    Wire.beginTransmission(0x68);
+    Wire.write(0x3B);
 
-  Mpu_data get_data() const;
+    if (Wire.endTransmission(false))
+      return;
+    uint8_t n = Wire.requestFrom(0x68, 14, true);
+    if (Wire.available() != 14 || n != 14)
+      return;
+
+    // Read data by byte
+    uint8_t ax_h = Wire.read();
+    uint8_t ax_l = Wire.read();
+    last_data.ax = (ax_h << 8) | ax_l;
+    uint8_t ay_h = Wire.read();
+    uint8_t ay_l = Wire.read();
+    last_data.ay = (ay_h << 8) | ay_l;
+    uint8_t az_h = Wire.read();
+    uint8_t az_l = Wire.read();
+    last_data.az = (az_h << 8) | az_l;
+
+    uint8_t temp_h = Wire.read();
+    uint8_t temp_l = Wire.read();
+    last_data.temperature = (temp_h << 8) | temp_l;
+
+    uint8_t gx_h = Wire.read();
+    uint8_t gx_l = Wire.read();
+    last_data.gx = (gx_h << 8) | gx_l;
+    uint8_t gy_h = Wire.read();
+    uint8_t gy_l = Wire.read();
+    last_data.gy = (gy_h << 8) | gy_l;
+    uint8_t gz_h = Wire.read();
+    uint8_t gz_l = Wire.read();
+    last_data.gz = (gz_h << 8) | gz_l;
+  }
+
+  Mpu_data get_data() const { return last_data; }
 };
 
 // Ultrasonic distance sensor.
@@ -295,7 +332,12 @@ void setup()
   delay(100);
 
   gpio_init();
+
   Wire.begin(PIN::SDA, PIN::SCL);
+  Wire.beginTransmission(0x68);
+  Wire.write(0x6B);
+  Wire.write(0x00); // Wake up
+  Wire.endTransmission();
 }
 
 // Run continously
