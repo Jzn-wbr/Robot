@@ -8,7 +8,13 @@ constexpr uint8_t CHANNEL_0 = 0;
 constexpr uint8_t CHANNEL_1 = 1;
 constexpr uint32_t PWM_FREQUENCY = 20000;
 constexpr uint8_t PWM_RESOLUTION_BITS = 8;
-constexpr uint8_t PWM_MAX = 255;
+constexpr uint8_t PWM_FORWARD = 150; // Test and adjust
+constexpr uint8_t PWM_TURN = 80;     // Test and adjust
+constexpr uint8_t PWM_BACKWARD = 80; // Test and adjust
+
+// MPU6050
+constexpr int MPU_ADRESS = 0x68;
+constexpr int MPU_POWER_MANAGMENT_REGISTER = 0x6B;
 
 // ESP32 pins
 namespace PIN
@@ -135,12 +141,12 @@ public:
   void read()
   {
     // I2C communication
-    Wire.beginTransmission(0x68);
+    Wire.beginTransmission(MPU_ADRESS);
     Wire.write(0x3B);
 
     if (Wire.endTransmission(false))
       return;
-    uint8_t n = Wire.requestFrom(0x68, 14, true);
+    uint8_t n = Wire.requestFrom(MPU_ADRESS, 14, true);
     if (Wire.available() != 14 || n != 14)
       return;
 
@@ -223,22 +229,63 @@ public:
   Robot() : left_motor{CHANNEL_0, PIN::AIN1, PIN::AIN2, PIN::STBY},
             right_motor{CHANNEL_1, PIN::BIN1, PIN::BIN2, PIN::STBY} {}
 
-  void free_wheel();
-  void move_forward();
-  void move_backward();
-  void turn_right();
-  void turn_left();
-  void brake();
+  void apply_state(Robot_state state)
+  {
+    switch (state)
+    {
+    case Robot_state::FREE_WHEEL:
+      left_motor.set_mode(Motor_mode::FREEWHEEL);
+      right_motor.set_mode(Motor_mode::FREEWHEEL);
+      break;
 
-  void read_mpu();
-  void request_radar_scan();
-  void update_radar_distance();
+    case Robot_state::MOVE_FORWARD:
+      left_motor.set_mode(Motor_mode::FORWARD);
+      right_motor.set_mode(Motor_mode::FORWARD);
+      left_motor.set_pwm(PWM_FORWARD);
+      right_motor.set_pwm(PWM_FORWARD);
+      break;
 
-  float get_distance_cm() const;
-  Mpu_data get_mpu_data() const;
+    case Robot_state::MOVE_BACKWARD:
+      left_motor.set_mode(Motor_mode::BACKWARD);
+      right_motor.set_mode(Motor_mode::BACKWARD);
+      left_motor.set_pwm(PWM_BACKWARD);
+      right_motor.set_pwm(PWM_BACKWARD);
+      break;
 
-  void on_echo_rise(uint32_t time);
-  void on_echo_fall(uint32_t time);
+    case Robot_state::TURN_RIGHT:
+      left_motor.set_mode(Motor_mode::FORWARD);
+      right_motor.set_mode(Motor_mode::BACKWARD);
+      left_motor.set_pwm(PWM_TURN);
+      right_motor.set_pwm(PWM_TURN);
+      break;
+
+    case Robot_state::TURN_LEFT:
+      left_motor.set_mode(Motor_mode::BACKWARD);
+      right_motor.set_mode(Motor_mode::FORWARD);
+      left_motor.set_pwm(PWM_TURN);
+      right_motor.set_pwm(PWM_TURN);
+      break;
+
+    case Robot_state::BRAKE:
+      left_motor.set_mode(Motor_mode::BRAKE);
+      right_motor.set_mode(Motor_mode::BRAKE);
+      break;
+    }
+  }
+
+  void read_mpu() { mpu.read(); }
+  void request_radar_scan() { radar.request_scan(); }
+  void update_radar_distance() { radar.calculate_distance(); }
+
+  float get_distance_cm() const { return radar.get_distance_cm(); }
+  Mpu_data get_mpu_data() const { return mpu.get_data(); }
+
+  void on_echo_rise(uint32_t time) { radar.set_echo_time_rise_us(time); }
+  void on_echo_fall(uint32_t time)
+  {
+    radar.set_echo_total_duration_us(time - radar.get_echo_time_rise_us());
+    radar.set_new_measure_flag(true);
+  }
 };
 
 // Read MPU at 100 Hz
@@ -334,8 +381,8 @@ void setup()
   gpio_init();
 
   Wire.begin(PIN::SDA, PIN::SCL);
-  Wire.beginTransmission(0x68);
-  Wire.write(0x6B);
+  Wire.beginTransmission(MPU_ADRESS);
+  Wire.write(MPU_POWER_MANAGMENT_REGISTER);
   Wire.write(0x00); // Wake up
   Wire.endTransmission();
 }
