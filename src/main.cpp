@@ -286,6 +286,16 @@ public:
     radar.set_echo_total_duration_us(time - radar.get_echo_time_rise_us());
     radar.set_new_measure_flag(true);
   }
+
+  bool consume_new_radar_measure_flag()
+  {
+    if (radar.get_new_measure_flag())
+    {
+      radar.set_new_measure_flag(false);
+      return true;
+    }
+    return false;
+  }
 };
 
 // Read MPU at 100 Hz
@@ -305,7 +315,24 @@ public:
   Scheduler(Robot &robot) : robot{robot}, last_fetch_accel_ms{0}, last_scan_radar_ms{0},
                             accel_period_ms{10}, radar_period_ms{100} {}
 
-  void update(uint32_t now_ms);
+  void update(uint32_t now_ms)
+  {
+
+    if (now_ms - last_fetch_accel_ms >= accel_period_ms)
+    {
+      robot.read_mpu();
+      last_fetch_accel_ms = now_ms;
+    }
+
+    if (now_ms - last_scan_radar_ms >= radar_period_ms)
+    {
+      robot.request_radar_scan();
+      last_scan_radar_ms = now_ms;
+    }
+
+    if (robot.consume_new_radar_measure_flag())
+      robot.update_radar_distance();
+  }
 };
 
 class Controller
