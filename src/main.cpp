@@ -345,7 +345,88 @@ public:
   Controller(Robot &robot) : robot{robot}, state{Robot_state::FREE_WHEEL},
                              entered_current_state_at_ms{0} {}
 
-  Robot_state think_and_establish_state(uint32_t now_ms);
+  Robot_state think_and_establish_state(uint32_t now_ms)
+  {
+    float dist_cm = robot.get_distance_cm();
+    Mpu_data mpu_data = robot.get_mpu_data();
+    Robot_state next_state;
+
+    switch (state)
+    {
+    case Robot_state::FREE_WHEEL:
+      if (dist_cm > 10)
+      {
+        next_state = Robot_state::MOVE_FORWARD;
+      }
+      else
+      {
+        next_state = Robot_state::TURN_LEFT;
+      }
+      break;
+
+    case Robot_state::MOVE_FORWARD:
+      if (dist_cm < 10)
+      {
+        next_state = Robot_state::BRAKE;
+      }
+      else
+      {
+        next_state = Robot_state::MOVE_FORWARD;
+      }
+      break;
+
+    case Robot_state::MOVE_BACKWARD:
+      if (now_ms - entered_current_state_at_ms > 600)
+      {
+        next_state = Robot_state::TURN_RIGHT;
+      }
+      else
+      {
+        next_state = Robot_state::MOVE_BACKWARD;
+      }
+      break;
+
+    case Robot_state::TURN_RIGHT:
+      if (now_ms - entered_current_state_at_ms > 1500)
+      {
+        next_state = Robot_state::FREE_WHEEL;
+      }
+      else
+      {
+        next_state = Robot_state::TURN_RIGHT;
+      }
+      break;
+
+    case Robot_state::TURN_LEFT:
+      if (now_ms - entered_current_state_at_ms > 2000)
+      {
+        next_state = Robot_state::FREE_WHEEL;
+      }
+      else
+      {
+        next_state = Robot_state::TURN_LEFT;
+      }
+      break;
+
+    case Robot_state::BRAKE:
+      if ((now_ms - entered_current_state_at_ms > 1000) && (mpu_data.ax < 30) && (mpu_data.ax > -30) && (mpu_data.ay < 30) &&
+          (mpu_data.ay > -30) && (mpu_data.az < 30) && (mpu_data.az > -30))
+      {
+        next_state = Robot_state::MOVE_BACKWARD;
+      }
+      else
+      {
+        next_state = Robot_state::BRAKE;
+      }
+      break;
+    }
+
+    if (state != next_state)
+      entered_current_state_at_ms = now_ms;
+
+    state = next_state;
+    return next_state;
+  }
 
   Robot_state get_current_state() const { return state; }
 };
@@ -422,8 +503,9 @@ void loop()
   uint32_t now_ms = millis();
   scheduler.update(now_ms);
 
+  Robot_state current_state = controller.get_current_state();
   Robot_state next_state = controller.think_and_establish_state(now_ms);
 
-  if (next_state != controller.get_current_state())
+  if (next_state != current_state)
     robot.apply_state(next_state);
 }
