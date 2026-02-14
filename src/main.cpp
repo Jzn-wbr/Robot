@@ -1,3 +1,28 @@
+/*
+ * main.cpp - Robot mobile ESP32 (Arduino framework)
+ *
+ * But:
+ * - Piloter un robot 2 roues motrices avec un pont en H.
+ * - Mesurer la distance frontale via HC-SR04.
+ * - Lire l'IMU MPU6050 (acceleration + gyroscope).
+ * - Decider un etat de mouvement via une machine d'etats.
+ *
+ * Architecture:
+ * - Motor: abstraction minimale d'un moteur DC (mode + PWM).
+ * - MPU6050: lecture I2C brute des 14 octets capteur.
+ * - HCSR04: declenchement sonar + traitement duree ECHO.
+ * - Robot: facade materielle (actionneurs/capteurs).
+ * - Scheduler: orchestration periodique capteurs.
+ * - Controller: logique decisionnelle (FSM).
+ *
+ * Timing principal:
+ * - MPU6050: 100 Hz
+ * - HC-SR04 trigger: 10 Hz
+ * - Calcul distance: apres front descendant ECHO (ISR)
+ *
+ * Notes:
+ * - L'ISR echo_change() met a jour la mesure ultrason.
+ */
 #include <Arduino.h>
 #include <Wire.h>
 
