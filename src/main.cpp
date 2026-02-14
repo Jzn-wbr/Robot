@@ -206,6 +206,7 @@ public:
 
   void set_echo_time_rise_us(uint32_t time) { echo_time_rise_us = time; }
   uint32_t get_echo_time_rise_us() const { return echo_time_rise_us; }
+
   void set_echo_total_duration_us(uint32_t time) { echo_total_duration_us = time; }
 
   void set_new_measure_flag(bool flag) { new_measure_ready = flag; }
@@ -312,8 +313,8 @@ class Scheduler
   uint32_t last_fetch_accel_ms;
   uint32_t last_scan_radar_ms;
 
-  uint32_t accel_period_ms; // 100 Hz
-  uint32_t radar_period_ms; // 10 Hz
+  const uint32_t accel_period_ms; // 100 Hz
+  const uint32_t radar_period_ms; // 10 Hz
 
 public:
   Scheduler(Robot &robot) : robot{robot}, last_fetch_accel_ms{0}, last_scan_radar_ms{0},
@@ -321,7 +322,6 @@ public:
 
   void update(uint32_t now_ms)
   {
-
     if (now_ms - last_fetch_accel_ms >= accel_period_ms)
     {
       robot.read_mpu();
@@ -339,15 +339,23 @@ public:
   }
 };
 
+struct Controller_memory
+{
+  Robot_state current_state;
+  uint32_t entered_current_state_at_ms;
+
+  Controller_memory(Robot_state current_state,
+                    uint32_t entered_current_state_at_ms) : current_state{current_state},
+                                                            entered_current_state_at_ms{entered_current_state_at_ms} {}
+};
+
 class Controller
 {
   Robot &robot;
-  Robot_state state;
-  uint32_t entered_current_state_at_ms;
+  Controller_memory mem;
 
 public:
-  Controller(Robot &robot) : robot{robot}, state{Robot_state::FREE_WHEEL},
-                             entered_current_state_at_ms{0} {}
+  Controller(Robot &robot) : robot{robot}, mem{Robot_state::FREE_WHEEL, 0} {}
 
   Robot_state think_and_establish_state(uint32_t now_ms)
   {
@@ -355,7 +363,7 @@ public:
     Mpu_data mpu_data = robot.get_mpu_data();
     Robot_state next_state;
 
-    switch (state)
+    switch (mem.current_state)
     {
     case Robot_state::FREE_WHEEL:
       if (dist_cm > 10)
@@ -380,7 +388,7 @@ public:
       break;
 
     case Robot_state::MOVE_BACKWARD:
-      if (now_ms - entered_current_state_at_ms > 600)
+      if (now_ms - mem.entered_current_state_at_ms > 600)
       {
         next_state = Robot_state::TURN_RIGHT;
       }
@@ -391,7 +399,7 @@ public:
       break;
 
     case Robot_state::TURN_RIGHT:
-      if (now_ms - entered_current_state_at_ms > 1500)
+      if (now_ms - mem.entered_current_state_at_ms > 1500)
       {
         next_state = Robot_state::FREE_WHEEL;
       }
@@ -402,7 +410,7 @@ public:
       break;
 
     case Robot_state::TURN_LEFT:
-      if (now_ms - entered_current_state_at_ms > 2000)
+      if (now_ms - mem.entered_current_state_at_ms > 2000)
       {
         next_state = Robot_state::FREE_WHEEL;
       }
@@ -413,7 +421,7 @@ public:
       break;
 
     case Robot_state::BRAKE:
-      if ((now_ms - entered_current_state_at_ms > 1000) && (mpu_data.ax < 30) && (mpu_data.ax > -30) && (mpu_data.ay < 30) &&
+      if ((now_ms - mem.entered_current_state_at_ms > 1000) && (mpu_data.ax < 30) && (mpu_data.ax > -30) && (mpu_data.ay < 30) &&
           (mpu_data.ay > -30) && (mpu_data.az < 30) && (mpu_data.az > -30))
       {
         next_state = Robot_state::MOVE_BACKWARD;
@@ -425,14 +433,16 @@ public:
       break;
     }
 
-    if (state != next_state)
-      entered_current_state_at_ms = now_ms;
+    if (mem.current_state != next_state)
+    {
+      mem.entered_current_state_at_ms = now_ms;
+      mem.current_state = next_state;
+    }
 
-    state = next_state;
     return next_state;
   }
 
-  Robot_state get_current_state() const { return state; }
+  Robot_state get_current_state() const { return mem.current_state; }
 };
 
 // Instances
@@ -476,10 +486,10 @@ void gpio_init()
 
   // PWM
   ledcSetup(CHANNEL_0, PWM_FREQUENCY, PWM_RESOLUTION_BITS);
-  ledcAttachPin(PIN::PWMA, CHANNEL_0);
-  ledcWrite(CHANNEL_0, 0);
   ledcSetup(CHANNEL_1, PWM_FREQUENCY, PWM_RESOLUTION_BITS);
+  ledcAttachPin(PIN::PWMA, CHANNEL_0);
   ledcAttachPin(PIN::PWMB, CHANNEL_1);
+  ledcWrite(CHANNEL_0, 0);
   ledcWrite(CHANNEL_1, 0);
 
   // ISR
