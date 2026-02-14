@@ -3,7 +3,7 @@
 
 constexpr unsigned long BAUDRATE = 115200;
 
-// PWM
+// PWM motor
 constexpr uint8_t CHANNEL_0 = 0;
 constexpr uint8_t CHANNEL_1 = 1;
 constexpr uint32_t PWM_FREQUENCY = 20000;
@@ -13,14 +13,14 @@ constexpr uint8_t PWM_TURN = 80;     // Test and adjust
 constexpr uint8_t PWM_BACKWARD = 80; // Test and adjust
 
 // MPU6050
-constexpr int MPU_ADRESS = 0x68;
+constexpr int MPU_ADDRESS = 0x68;
 constexpr int MPU_POWER_MANAGMENT_REGISTER = 0x6B;
 
 // ESP32 pins
 namespace PIN
 {
   // Driver
-  constexpr uint8_t STBY = 26;
+  constexpr uint8_t STBY = 26; // Left and right motors
 
   constexpr uint8_t PWMA = 25; // Left motor
   constexpr uint8_t AIN1 = 33;
@@ -59,54 +59,41 @@ enum class Motor_mode
 };
 
 // Represents one DC motor controlled through an H‑bridge driver.
-// The ESP32 sends two logic signals (IN1/IN2) to set current direction,
+// The ESP32 sends three logic signals (IN1/IN2/STBY) to set current mode,
 // and a PWM signal to control motor power.
 class Motor
 {
-  Motor_mode mode;
-  uint8_t pwm;
   const uint8_t channel;
   const uint8_t IN1, IN2, STBY;
 
 public:
-  Motor(uint8_t channel, uint8_t IN1, uint8_t IN2, uint8_t STBY) : mode{Motor_mode::FREEWHEEL},
-                                                                   pwm{0}, channel{channel},
+  Motor(uint8_t channel, uint8_t IN1, uint8_t IN2, uint8_t STBY) : channel{channel},
                                                                    IN1{IN1}, IN2{IN2},
                                                                    STBY{STBY} {}
 
   void set_pwm(uint8_t pwm)
   {
-    this->pwm = pwm;
     ledcWrite(channel, pwm);
   }
 
   void set_mode(Motor_mode new_mode)
   {
-    if (mode == new_mode)
-      return;
-
-    mode = new_mode;
-
-    switch (mode)
+    switch (new_mode)
     {
     case Motor_mode::FREEWHEEL:
       digitalWrite(STBY, LOW);
       break;
 
     case Motor_mode::FORWARD:
-      ledcWrite(channel, 0);
       digitalWrite(STBY, HIGH);
       digitalWrite(IN1, HIGH);
       digitalWrite(IN2, LOW);
-      ledcWrite(channel, pwm);
       break;
 
     case Motor_mode::BACKWARD:
-      ledcWrite(channel, 0);
       digitalWrite(STBY, HIGH);
       digitalWrite(IN1, LOW);
       digitalWrite(IN2, HIGH);
-      ledcWrite(channel, pwm);
       break;
 
     case Motor_mode::BRAKE:
@@ -116,9 +103,6 @@ public:
       break;
     }
   }
-
-  uint8_t get_pwm() const { return pwm; }
-  Motor_mode get_mode() const { return mode; }
 };
 
 struct Mpu_data
@@ -128,51 +112,61 @@ struct Mpu_data
   int16_t temperature;
 };
 
-// IMU sensor (accelerometer + gyroscope) communicating over the I2C bus.
-// SDA/SCL carry digital data between ESP32 and the chip.
+// IMU sensor (accelerometer + gyroscope + temperature).
+// Communication over the I2C bus (SDA/SCL) between ESP32 and the chip.
 // The INT pin can generate a interrupt when new data is ready.
 class MPU6050
 {
   Mpu_data last_data;
+  TwoWire &bus;
+  const uint8_t address;
 
 public:
-  MPU6050() : last_data{} {}
+  MPU6050(TwoWire &bus, uint8_t address) : last_data{}, bus{bus}, address{address} {}
+
+  void begin()
+  {
+    bus.beginTransmission(address);
+    bus.write(MPU_POWER_MANAGMENT_REGISTER);
+    bus.write(0x00); // Wake up
+    bus.endTransmission();
+  }
 
   void read()
   {
     // I2C communication
-    Wire.beginTransmission(MPU_ADRESS);
-    Wire.write(0x3B);
+    bus.beginTransmission(address);
+    bus.write(0x3B);
 
-    if (Wire.endTransmission(false))
+    if (bus.endTransmission(false))
       return;
-    uint8_t n = Wire.requestFrom(MPU_ADRESS, 14, true);
-    if (Wire.available() != 14 || n != 14)
+    uint8_t n = bus.requestFrom(address, 14, true);
+    if (bus.available() != 14 || n != 14)
       return;
 
     // Read data by byte
-    uint8_t ax_h = Wire.read();
-    uint8_t ax_l = Wire.read();
+    uint8_t ax_h = bus.read();
+    uint8_t ax_l = bus.read();
     last_data.ax = (ax_h << 8) | ax_l;
-    uint8_t ay_h = Wire.read();
-    uint8_t ay_l = Wire.read();
+    uint8_t ay_h = bus.read();
+    uint8_t ay_l = bus.read();
     last_data.ay = (ay_h << 8) | ay_l;
-    uint8_t az_h = Wire.read();
-    uint8_t az_l = Wire.read();
+    uint8_t az_h = bus.read();
+    uint8_t az_l = bus.read();
     last_data.az = (az_h << 8) | az_l;
 
-    uint8_t temp_h = Wire.read();
-    uint8_t temp_l = Wire.read();
+    uint8_t temp_h = bus.read();
+    uint8_t temp_l = bus.read();
     last_data.temperature = (temp_h << 8) | temp_l;
 
-    uint8_t gx_h = Wire.read();
-    uint8_t gx_l = Wire.read();
+    uint8_t gx_h = bus.read();
+    uint8_t gx_l = bus.read();
     last_data.gx = (gx_h << 8) | gx_l;
-    uint8_t gy_h = Wire.read();
-    uint8_t gy_l = Wire.read();
+    uint8_t gy_h = bus.read();
+    uint8_t gy_l = bus.read();
     last_data.gy = (gy_h << 8) | gy_l;
-    uint8_t gz_h = Wire.read();
-    uint8_t gz_l = Wire.read();
+    uint8_t gz_h = bus.read();
+    uint8_t gz_l = bus.read();
     last_data.gz = (gz_h << 8) | gz_l;
   }
 
@@ -227,10 +221,20 @@ class Robot
 
 public:
   Robot() : left_motor{CHANNEL_0, PIN::AIN1, PIN::AIN2, PIN::STBY},
-            right_motor{CHANNEL_1, PIN::BIN1, PIN::BIN2, PIN::STBY} {}
+            right_motor{CHANNEL_1, PIN::BIN1, PIN::BIN2, PIN::STBY},
+            mpu{Wire, MPU_ADDRESS} {}
+
+  void setup()
+  {
+    Wire.begin(PIN::SDA, PIN::SCL);
+    mpu.begin();
+  }
 
   void apply_state(Robot_state state)
   {
+    left_motor.set_pwm(0);
+    right_motor.set_pwm(0);
+
     switch (state)
     {
     case Robot_state::FREE_WHEEL:
@@ -490,11 +494,7 @@ void setup()
 
   gpio_init();
 
-  Wire.begin(PIN::SDA, PIN::SCL);
-  Wire.beginTransmission(MPU_ADRESS);
-  Wire.write(MPU_POWER_MANAGMENT_REGISTER);
-  Wire.write(0x00); // Wake up
-  Wire.endTransmission();
+  robot.setup();
 }
 
 // Run continously
