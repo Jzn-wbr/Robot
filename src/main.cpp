@@ -13,8 +13,9 @@ constexpr uint8_t PWM_TURN = 80;     // Test and adjust
 constexpr uint8_t PWM_BACKWARD = 80; // Test and adjust
 
 // MPU6050
-constexpr int MPU_ADDRESS = 0x68;
+constexpr uint16_t MPU_ADDRESS = 0x68;
 constexpr int MPU_POWER_MANAGMENT_REGISTER = 0x6B;
+constexpr uint8_t MPU_DATA_SIZE = 14;
 
 // ESP32 pins
 namespace PIN
@@ -119,10 +120,10 @@ class MPU6050
 {
   Mpu_data last_data;
   TwoWire &bus;
-  const uint8_t address;
+  const uint16_t address;
 
 public:
-  MPU6050(TwoWire &bus, uint8_t address) : last_data{}, bus{bus}, address{address} {}
+  MPU6050(TwoWire &bus, uint16_t address) : last_data{}, bus{bus}, address{address} {}
 
   void begin()
   {
@@ -140,8 +141,8 @@ public:
 
     if (bus.endTransmission(false))
       return;
-    uint8_t n = bus.requestFrom(address, 14, true);
-    if (bus.available() != 14 || n != 14)
+    uint8_t n = bus.requestFrom(address, MPU_DATA_SIZE, true);
+    if (bus.available() != MPU_DATA_SIZE || n != MPU_DATA_SIZE)
       return;
 
     // Read data by byte
