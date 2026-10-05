@@ -33,27 +33,6 @@ Les schémas électriques et le brochage sont disponibles dans [`Schema/`](Schem
 
 La vue d'assemblage est disponible ici : [assemblage v1](images/assemblage_v1.png).
 
-> Le dossier [`CAD/`](CAD/) est réservé aux fichiers CAO natifs et aux exports de fabrication. Aucun fichier source CAO n'était présent dans le dépôt au moment de cette mise à jour ; ajoutez-y les fichiers `.step`, `.stl`, `.f3d`, `.FCStd` ou équivalents pour compléter la documentation mécanique.
-
-## Démarrer rapidement
-
-### Prérequis
-
-- [PlatformIO](https://platformio.org/)
-- Une carte ESP32 DevKit
-- Un pont en H compatible avec les moteurs utilisés
-- Un HC-SR04 et un MPU6050
-
-### Compiler et téléverser
-
-```bash
-pio run
-pio run --target upload
-pio device monitor
-```
-
-La configuration de la carte, du framework et du moniteur série se trouve dans [`platformio.ini`](platformio.ini). Le moniteur série utilise une vitesse de **115200 bauds**.
-
 ## Brochage principal
 
 | Fonction | GPIO |
@@ -78,17 +57,3 @@ La configuration de la carte, du framework et du moniteur série se trouve dans 
 └── platformio.ini
 ```
 
-## Feuille de route
-
-- Ajouter les fichiers CAO natifs et les fichiers d'impression 3D.
-- Filtrer et valider les mesures ultrasoniques.
-- Ajouter des tests et des scénarios de navigation.
-- Enrichir la détection d'obstacles et les comportements autonomes.
-
-## Contribuer
-
-Les améliorations sont les bienvenues : documentation, schémas, pièces mécaniques, tests ou nouveaux comportements. Ouvrez une issue pour proposer une évolution ou une pull request pour soumettre une contribution.
-
-## Licence
-
-Aucune licence n'est encore définie pour ce dépôt. Ajoutez un fichier `LICENSE` avant toute diffusion externe du code ou des fichiers matériels.
